@@ -1,0 +1,60 @@
+name: Build ZeroClaw for Windows (x86_64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      cargo_features:
+        description: "Cargo features to enable (comma-separated)"
+        required: false
+        default: "channel-matrix,channel-lark,whatsapp-web"
+        type: string
+
+jobs:
+  build:
+    name: Build Windows x86_64
+    runs-on: windows-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+        with:
+          toolchain: 1.93.0
+          targets: x86_64-pc-windows-msvc
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web dashboard
+        run: cd web && npm ci && npm run build
+
+      - name: Build release binary
+        shell: bash
+        run: |
+          FEATURES="${{ inputs.cargo_features }}"
+          cargo build --release --locked --features "${FEATURES}" --target x86_64-pc-windows-msvc
+
+      - name: Check binary size
+        shell: bash
+        run: bash scripts/ci/check_binary_size.sh "target/x86_64-pc-windows-msvc/release/zeroclaw.exe" "x86_64-pc-windows-msvc"
+        env:
+          BINARY_SIZE_HARD_LIMIT: "52428800" # 50MB
+
+      - name: Package binary
+        run: |
+          cd target/x86_64-pc-windows-msvc/release
+          7z a ../../../zeroclaw-x86_64-pc-windows-msvc.zip zeroclaw.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: zeroclaw-windows-x86_64
+          path: zeroclaw-x86_64-pc-windows-msvc.zip
+          retention-days: 1
